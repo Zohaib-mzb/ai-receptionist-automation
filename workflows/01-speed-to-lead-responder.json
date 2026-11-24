@@ -1,0 +1,643 @@
+{
+  "name": "AI Receptionist 1: Speed-to-Lead Responder",
+  "nodes": [
+    {
+      "id": "5a4d4ce3-e789-4154-841d-e61360508e35",
+      "name": "New Lead Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-lead",
+        "responseMode": "responseNode"
+      },
+      "webhookId": "59d90684-cd07-4f49-8289-01928f741b7f"
+    },
+    {
+      "id": "fd71dcb7-dc5f-4970-9d04-105217d24a1b",
+      "name": "Normalize Lead",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "n1",
+              "name": "name",
+              "value": "={{ $json.body?.name ?? $json.name ?? \"there\" }}",
+              "type": "string"
+            },
+            {
+              "id": "n2",
+              "name": "phone",
+              "value": "={{ $json.body?.phone ?? $json.phone ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "n3",
+              "name": "email",
+              "value": "={{ $json.body?.email ?? $json.email ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "n4",
+              "name": "message",
+              "value": "={{ $json.body?.message ?? $json.message ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "n5",
+              "name": "source",
+              "value": "={{ $json.body?.source ?? $json.source ?? \"website\" }}",
+              "type": "string"
+            },
+            {
+              "id": "n6",
+              "name": "receivedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fdc97f30-7e56-4df4-b112-58caf11f5401",
+      "name": "Acknowledge Lead",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"ok\": true, \"message\": \"Thanks! We will contact you within a minute.\" }"
+      }
+    },
+    {
+      "id": "5b8ee30c-f4ca-49e7-aa8f-ce2a3bbd3585",
+      "name": "Business Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "businessName",
+              "value": "REPLACE_ME: Your business name, e.g. Maple HVAC",
+              "type": "string"
+            },
+            {
+              "id": "s2",
+              "name": "services",
+              "value": "REPLACE_ME: Services you offer, e.g. AC repair, furnace install, maintenance",
+              "type": "string"
+            },
+            {
+              "id": "s3",
+              "name": "serviceArea",
+              "value": "REPLACE_ME: Service area, e.g. Toronto and GTA",
+              "type": "string"
+            },
+            {
+              "id": "s4",
+              "name": "bookingLink",
+              "value": "REPLACE_ME: Booking link, e.g. https://cal.com/yourbusiness",
+              "type": "string"
+            },
+            {
+              "id": "s5",
+              "name": "smsFromNumber",
+              "value": "REPLACE_ME: Your Twilio phone number, e.g. +14165550000",
+              "type": "string"
+            },
+            {
+              "id": "s6",
+              "name": "ownerTelegramChatId",
+              "value": "REPLACE_ME: Owner Telegram chat ID",
+              "type": "string"
+            },
+            {
+              "id": "s7",
+              "name": "vapiAssistantId",
+              "value": "REPLACE_ME: Vapi assistant ID for outbound calls",
+              "type": "string"
+            },
+            {
+              "id": "s8",
+              "name": "vapiPhoneNumberId",
+              "value": "REPLACE_ME: Vapi phone number ID",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a30c1e29-a92b-4ff3-aa77-7fe8176c4e3d",
+      "name": "Qualify Lead with AI",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=New lead for {{ $json.businessName }}.\nName: {{ $json.name }}\nPhone: {{ $json.phone }}\nEmail: {{ $json.email }}\nSource: {{ $json.source }}\nMessage: {{ $json.message }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are the front desk of {{ $json.businessName }}, which offers: {{ $json.services }} in {{ $json.serviceArea }}.\n\nScore the lead:\n- hot: needs a service we offer soon (today or this week) or asks for a quote or booking\n- warm: interested but no clear timeline\n- cold: spam, out of area, or not a service we offer\n\nWrite sms_reply as a friendly SMS under 300 characters, from {{ $json.businessName }}, using the lead first name. For hot and warm leads include the booking link {{ $json.bookingLink }}. Never promise prices or exact arrival times. For cold leads write a polite short reply.\n\nWrite owner_summary in one line for the business owner."
+        }
+      }
+    },
+    {
+      "id": "5d4c2a51-5baf-433f-9547-ee606d82fa2f",
+      "name": "Gemini Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        800,
+        520
+      ],
+      "parameters": {
+        "modelName": "models/gemini-3-flash-preview",
+        "options": {
+          "temperature": 0.3
+        }
+      }
+    },
+    {
+      "id": "b31f3534-6642-4f8c-8b2f-93547ac97cb9",
+      "name": "Lead Score Format",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        960,
+        520
+      ],
+      "parameters": {
+        "schemaType": "fromJson",
+        "jsonSchemaExample": "{ \"score\": \"hot\", \"service_needed\": \"AC repair\", \"urgency\": \"today\", \"intent_summary\": \"AC broken, wants same-day visit\", \"sms_reply\": \"Hi Sarah, this is Maple HVAC. Sorry about your AC! We can come today. Book a time here: https://cal.com/maplehvac or reply with a good time.\", \"owner_summary\": \"Hot lead: AC not working, wants same-day service\" }"
+      }
+    },
+    {
+      "id": "1416de9a-8d8e-4182-8e02-b879406b7692",
+      "name": "Build Lead Record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "receivedAt",
+              "value": "={{ $(\"Business Settings\").item.json.receivedAt }}",
+              "type": "string"
+            },
+            {
+              "id": "r2",
+              "name": "name",
+              "value": "={{ $(\"Business Settings\").item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "r3",
+              "name": "phone",
+              "value": "={{ $(\"Business Settings\").item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "r4",
+              "name": "email",
+              "value": "={{ $(\"Business Settings\").item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "r5",
+              "name": "source",
+              "value": "={{ $(\"Business Settings\").item.json.source }}",
+              "type": "string"
+            },
+            {
+              "id": "r6",
+              "name": "message",
+              "value": "={{ $(\"Business Settings\").item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "r7",
+              "name": "score",
+              "value": "={{ $json.output.score }}",
+              "type": "string"
+            },
+            {
+              "id": "r8",
+              "name": "serviceNeeded",
+              "value": "={{ $json.output.service_needed }}",
+              "type": "string"
+            },
+            {
+              "id": "r9",
+              "name": "urgency",
+              "value": "={{ $json.output.urgency }}",
+              "type": "string"
+            },
+            {
+              "id": "r10",
+              "name": "smsReply",
+              "value": "={{ $json.output.sms_reply }}",
+              "type": "string"
+            },
+            {
+              "id": "r11",
+              "name": "ownerSummary",
+              "value": "={{ $json.output.owner_summary }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "32b6c176-f20f-497f-b68e-684e3c4a4a66",
+      "name": "Text Lead Instantly",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        100
+      ],
+      "parameters": {
+        "resource": "sms",
+        "operation": "send",
+        "from": "={{ $(\"Business Settings\").item.json.smsFromNumber }}",
+        "to": "={{ $json.phone }}",
+        "message": "={{ $json.smsReply }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "8d2a6304-46f1-4388-9b22-b26d7885b8e2",
+      "name": "Log Lead to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1460,
+        300
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Leads"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "receivedAt",
+              "displayName": "receivedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "serviceNeeded",
+              "displayName": "serviceNeeded",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "smsReply",
+              "displayName": "smsReply",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ownerSummary",
+              "displayName": "ownerSummary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "handlingExtraData": "insertInNewColumn"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "b0b1acdd-c7ca-4a7f-a9ce-fbb5ff5bfdf0",
+      "name": "Alert Owner on Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1460,
+        500
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $(\"Business Settings\").item.json.ownerTelegramChatId }}",
+        "text": "=New {{ $json.score.toUpperCase() }} lead\n{{ $json.ownerSummary }}\n\nName: {{ $json.name }}\nPhone: {{ $json.phone }}\nSource: {{ $json.source }}\nMessage: {{ $json.message }}\n\nAI already texted: {{ $json.smsReply }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "c5c7ac03-7778-47ed-ad7f-7513cfb17307",
+      "name": "Is Hot Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1460,
+        700
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.score }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "hot"
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a665ae77-31fb-44d0-b930-5af9663ba8c1",
+      "name": "AI Voice Call to Hot Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1700,
+        700
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vapi.ai/call",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpTemplatedCustomAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ assistantId: $(\"Business Settings\").item.json.vapiAssistantId, phoneNumberId: $(\"Business Settings\").item.json.vapiPhoneNumberId, customer: { number: $json.phone, name: $json.name }, assistantOverrides: { variableValues: { leadName: $json.name, serviceNeeded: $json.serviceNeeded, leadMessage: $json.message } } }) }}"
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "20338a7b-21f1-40c5-ad8d-485aac8a328f",
+      "name": "Setup Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -60
+      ],
+      "parameters": {
+        "content": "## Speed-to-Lead\nAny form, ad or landing page POSTs a lead to the **New Lead Webhook** (name, phone, email, message, source).\n\n1. Fill in **Business Settings**\n2. Connect Gemini, Twilio, Google Sheets, Telegram and Vapi credentials\n3. Create a Google Sheet with a tab named **Leads**\n\nAI scores the lead, texts it within seconds, logs it, alerts the owner, and calls hot leads with a Vapi voice agent.",
+        "color": 4,
+        "width": 900,
+        "height": 300
+      }
+    }
+  ],
+  "connections": {
+    "New Lead Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge Lead": {
+      "main": [
+        [
+          {
+            "node": "Business Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Settings": {
+      "main": [
+        [
+          {
+            "node": "Qualify Lead with AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualify Lead with AI": {
+      "main": [
+        [
+          {
+            "node": "Build Lead Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Qualify Lead with AI",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Score Format": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Qualify Lead with AI",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Lead Record": {
+      "main": [
+        [
+          {
+            "node": "Text Lead Instantly",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Lead to Sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alert Owner on Telegram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Hot Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Hot Lead?": {
+      "main": [
+        [
+          {
+            "node": "AI Voice Call to Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
