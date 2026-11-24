@@ -1,0 +1,655 @@
+{
+  "name": "AI Receptionist 3: Voice Agent Backend (Vapi)",
+  "nodes": [
+    {
+      "id": "83c1ce49-1812-4e02-b984-f249ceb961f9",
+      "name": "Vapi Server Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-receptionist",
+        "responseMode": "responseNode"
+      },
+      "webhookId": "15ab4c7e-44d8-4f1e-bee9-bf5232187a15"
+    },
+    {
+      "id": "d72e90c0-e8f4-43a3-b3da-91f242e0b9c0",
+      "name": "Business Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        220,
+        400
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "v1",
+              "name": "businessName",
+              "value": "REPLACE_ME: Your business name",
+              "type": "string"
+            },
+            {
+              "id": "v2",
+              "name": "ownerTelegramChatId",
+              "value": "REPLACE_ME: Owner Telegram chat ID",
+              "type": "string"
+            },
+            {
+              "id": "v3",
+              "name": "messageType",
+              "value": "={{ $json.body?.message?.type ?? \"\" }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "1d48c9ab-b84c-41fb-a468-b61a537bedc3",
+      "name": "Route Vapi Event",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        400
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "renameOutput": true,
+              "outputKey": "Tool call",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.messageType }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "tool-calls"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "Call ended",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.messageType }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "end-of-call-report"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Other events"
+        }
+      }
+    },
+    {
+      "id": "ff712cb8-69bf-4e9b-a3e6-98fdbd345a10",
+      "name": "Read Tool Call",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const m = $json.body?.message ?? {};\nconst list = m.toolCallList ?? (m.toolWithToolCallList ?? []).map(t => t.toolCall);\nconst tc = list[0] ?? {};\nconst fn = tc.function ?? {};\nlet args = fn['arg' + 'uments'] ?? {};\nif (typeof args === 'string') {\n  try { args = JSON.parse(args); } catch (e) { args = {}; }\n}\nreturn {\n  json: {\n    toolCallId: tc.id ?? '',\n    toolName: fn.name ?? '',\n    args,\n    callerNumber: m.call?.customer?.number ?? ''\n  }\n};"
+      }
+    },
+    {
+      "id": "248fd640-2c05-4fee-b471-16462adbdc8e",
+      "name": "Which Tool?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        920,
+        200
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "renameOutput": true,
+              "outputKey": "check_availability",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.toolName }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "check_availability"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "book_appointment",
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.toolName }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "book_appointment"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Unknown tool"
+        }
+      }
+    },
+    {
+      "id": "22ea0063-ccd7-4dae-a38e-b0acf96c7934",
+      "name": "Check Calendar Slot",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1180,
+        60
+      ],
+      "parameters": {
+        "resource": "calendar",
+        "operation": "availability",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Business calendar"
+        },
+        "timeMin": "={{ $json.args.start }}",
+        "timeMax": "={{ $json.args.end }}",
+        "options": {
+          "outputFormat": "availability"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "7c4ee138-2d99-4e51-a24f-6dbcf09decde",
+      "name": "Send Availability to Vapi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1420,
+        60
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ results: [{ toolCallId: $(\"Read Tool Call\").item.json.toolCallId, result: $json.available === true ? \"That time is free.\" : ($json.available === false ? \"That time is already booked. Offer a different time.\" : \"Could not check the calendar right now. Take their preferred time and say the team will confirm.\") }] }) }}"
+      }
+    },
+    {
+      "id": "dce26c0e-ab07-46f2-a509-ad4743a69433",
+      "name": "Book in Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1180,
+        240
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Business calendar"
+        },
+        "start": "={{ $json.args.start }}",
+        "end": "={{ $json.args.end }}",
+        "additionalFields": {
+          "summary": "={{ $json.args.service ?? \"Appointment\" }} - {{ $json.args.name ?? \"Caller\" }}",
+          "description": "=Booked by AI phone receptionist\nName: {{ $json.args.name ?? \"\" }}\nPhone: {{ $json.args.phone ?? $json.callerNumber }}\nNotes: {{ $json.args.notes ?? \"\" }}"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "bdb1008d-8e32-47f2-a4d2-15cefd691381",
+      "name": "Send Booking Result to Vapi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1420,
+        240
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ results: [{ toolCallId: $(\"Read Tool Call\").item.json.toolCallId, result: $json.id ? \"Booked successfully.\" : \"Booking failed. Tell the caller the team will call back to confirm.\" }] }) }}"
+      }
+    },
+    {
+      "id": "d7b3d593-2942-4585-a91d-d5fec66fb402",
+      "name": "Unknown Tool Reply",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1180,
+        400
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ results: [{ toolCallId: $json.toolCallId, result: \"This action is not available. Offer to take a message.\" }] }) }}"
+      }
+    },
+    {
+      "id": "729bbd87-ec04-4f0b-a0e2-aceb08bfd95a",
+      "name": "Acknowledge Call Report",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        700,
+        560
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"ok\": true }"
+      }
+    },
+    {
+      "id": "25dff2e7-6c5a-4a85-a17e-3a33efdd6714",
+      "name": "Build Call Record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        920,
+        560
+      ],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "endedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "callerNumber",
+              "value": "={{ $json.body.message.call?.customer?.number ?? \"unknown\" }}",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "summary",
+              "value": "={{ $json.body.message.analysis?.summary ?? $json.body.message.summary ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "endedReason",
+              "value": "={{ $json.body.message.endedReason ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "durationSeconds",
+              "value": "={{ $json.body.message.durationSeconds ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "c6",
+              "name": "recordingUrl",
+              "value": "={{ $json.body.message.recordingUrl ?? $json.body.message.artifact?.recordingUrl ?? \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "c7",
+              "name": "transcript",
+              "value": "={{ $json.body.message.transcript ?? $json.body.message.artifact?.transcript ?? \"\" }}",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "d1da6f20-41d1-4f46-b052-d3f84e6479ee",
+      "name": "Acknowledge Other Events",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        700,
+        900
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"ok\": true }"
+      }
+    },
+    {
+      "id": "697e12e8-e29c-4434-9300-2c423e1a8437",
+      "name": "Log Call to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1180,
+        560
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "Leads"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Calls"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "endedAt",
+              "displayName": "endedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "callerNumber",
+              "displayName": "callerNumber",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "endedReason",
+              "displayName": "endedReason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "durationSeconds",
+              "displayName": "durationSeconds",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recordingUrl",
+              "displayName": "recordingUrl",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "transcript",
+              "displayName": "transcript",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "handlingExtraData": "insertInNewColumn"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "69dc86e4-98ac-41b6-b75a-cf939405e513",
+      "name": "Send Call Summary to Owner",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1180,
+        740
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $(\"Business Settings\").item.json.ownerTelegramChatId }}",
+        "text": "=AI receptionist call ended\nCaller: {{ $json.callerNumber }}\nLength: {{ $json.durationSeconds }}s\n\n{{ $json.summary }}\n\nRecording: {{ $json.recordingUrl }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "c7180819-1a2d-4e8f-bcca-53f0652f2a1a",
+      "name": "Setup Guide",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -80
+      ],
+      "parameters": {
+        "content": "## Voice AI Receptionist (Vapi backend)\nIn Vapi, create an assistant with a phone number and set its **Server URL** to this webhook production URL.\n\nAdd two tools to the assistant:\n- **check_availability**(start, end) ISO date-times\n- **book_appointment**(start, end, name, phone, service, notes)\n\nEnable the **end-of-call-report** server message. Create a Google Sheet tab named **Calls**, pick your calendar in both calendar nodes, and fill in Business Settings.",
+        "color": 6,
+        "width": 680,
+        "height": 380
+      }
+    }
+  ],
+  "connections": {
+    "Vapi Server Webhook": {
+      "main": [
+        [
+          {
+            "node": "Business Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Settings": {
+      "main": [
+        [
+          {
+            "node": "Route Vapi Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Vapi Event": {
+      "main": [
+        [
+          {
+            "node": "Read Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Acknowledge Call Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Acknowledge Other Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Which Tool?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Which Tool?": {
+      "main": [
+        [
+          {
+            "node": "Check Calendar Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Book in Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unknown Tool Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Calendar Slot": {
+      "main": [
+        [
+          {
+            "node": "Send Availability to Vapi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Book in Calendar": {
+      "main": [
+        [
+          {
+            "node": "Send Booking Result to Vapi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge Call Report": {
+      "main": [
+        [
+          {
+            "node": "Build Call Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Call Record": {
+      "main": [
+        [
+          {
+            "node": "Log Call to Sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Call Summary to Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
